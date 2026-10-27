@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TP04 – Containerization and Big Data Environment Deployment Using Docker</title>
+<style>
+  :root {
+    --bg: #ffffff; --text: #1f2933; --muted: #5b6770; --line: #d5dbe0;
+    --accent: #1b5e8c; --panel: #f3f6f8; --code: #eef2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14191d; --text: #e6eaed; --muted: #9aa5ad; --line: #2e373e;
+      --accent: #6fb3dd; --panel: #1c2328; --code: #1a2227;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: Georgia, "Times New Roman", serif; line-height: 1.65; }
+  main { max-width: 940px; margin: 0 auto; padding: 40px 20px 64px; }
+  header { border-bottom: 2px solid var(--accent); padding-bottom: 16px; margin-bottom: 28px; }
+  h1 { font-size: 1.7rem; margin: 0 0 6px; line-height: 1.25; }
+  .meta { color: var(--muted); font-family: system-ui, Arial, sans-serif; font-size: .92rem; margin: 0; }
+  h2 { font-size: 1.28rem; margin: 44px 0 10px; color: var(--accent); }
+  h3 { font-size: 1.02rem; margin: 24px 0 6px; font-family: system-ui, Arial, sans-serif; }
+  p, li { max-width: 76ch; }
+  table { border-collapse: collapse; width: 100%; font-family: system-ui, Arial, sans-serif; font-size: .92rem; margin: 10px 0; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--panel); }
+  .scroll { overflow-x: auto; }
+  figure { margin: 18px 0 26px; }
+  figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); }
+  figcaption { font-family: system-ui, Arial, sans-serif; font-size: .88rem; color: var(--muted); margin-top: 6px; }
+  .missing { display: none; font-family: system-ui, Arial, sans-serif; border: 1px dashed var(--line); padding: 18px; color: var(--muted); max-width: 100%; }
+  pre { background: var(--code); border: 1px solid var(--line); padding: 12px 14px; overflow-x: auto; font-size: .86rem; line-height: 1.5; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: .9em; }
+  p code, li code, td code { background: var(--code); padding: 1px 5px; }
+  .answer { background: var(--panel); border-left: 4px solid var(--accent); padding: 4px 20px; margin: 10px 0 18px; }
+  .q { font-family: system-ui, Arial, sans-serif; font-weight: 600; margin-bottom: 0; }
+  .note { font-family: system-ui, Arial, sans-serif; font-size: .9rem; color: var(--muted); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>TP04 – Containerization and Big Data Environment Deployment Using Docker</h1>
+  <p class="meta">University of Eloued · Faculty of Exact Sciences · Department of Computer Science<br>
+  Master 2 – AI &amp; Data Science · Module: Big Data Analytics · 2026/2027<br>
+  Docker Hub account: <code>zizoutoumou</code> · Image: <code>zizoutoumou/tp04-analysis:v1</code></p>
+</header>
+
+<h2>0. Project overview</h2>
+<p>The application containerized in this TP is the analysis of TP03 rewritten as a Python script. It processes the full
+Kaggle dataset <em>eCommerce behavior data from multi-category store</em> (files <code>2019-Oct.csv</code>, 5.7 GB, and
+<code>2019-Nov.csv</code>, 9.0 GB) and reproduces the TP03 cleaning steps and measures: total events, unique users, purchases,
+revenue, conversion rate, events by type, top 10 brands by revenue, revenue by main category and purchases per hour.</p>
+<p>The CSV files are far too large to fit in memory with a plain <code>pd.read_csv</code>, so the script reads them in chunks of
+1 million rows and keeps only running totals. The files are <strong>never copied into the image</strong>: they are mounted
+read-only at run time (<code>-v ./data:/app/data:ro</code>), and <code>.dockerignore</code> keeps the 14 GB out of the build context.
+The file to analyse is chosen with the environment variable <code>DATA_FILE</code>, so the same image processes October or November.</p>
+
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>app.py</code></td><td>Chunked pandas analysis (cleaning + KPIs)</td></tr>
+  <tr><td><code>requirements.txt</code></td><td>Python dependency: <code>pandas==2.2.3</code></td></tr>
+  <tr><td><code>Dockerfile</code></td><td>Recipe used to build the image</td></tr>
+  <tr><td><code>.dockerignore</code></td><td>Keeps <code>data/</code>, screenshots and notes out of the image build context</td></tr>
+  <tr><td><code>compose.yaml</code></td><td>Docker Compose definition (Task 4)</td></tr>
+  <tr><td><code>.gitignore</code></td><td>Keeps the huge CSV files out of GitHub</td></tr>
+</table>
+
+<h3>Dockerfile</h3>
+<pre>FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app.py .
+CMD ["python", "app.py"]</pre>
+
+<!-- ============ TASK 1 ============ -->
+<h2>1. Task 1 – Installation</h2>
+<p>Docker Desktop (Windows) is installed and the Docker Hub account <code>zizoutoumou</code> was created. The installation was
+verified with <code>docker --version</code> (Docker 29.9.2) and <code>docker run hello-world</code>, which pulled a test image and ran
+a container from it. <code>docker login</code> then ended with “Login Succeeded”, which is required to push an image later.</p>
+<pre>docker --version
+docker run hello-world
+docker login</pre>
+
+<figure>
+  <img src="images/01-docker-version.png" alt="docker --version and hello-world" onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
+  <div class="missing">Add your screenshot as <code>images/01-docker-version.png</code> (output of <code>docker --version</code> and <code>hello-world</code>).</div>
+  <figcaption>Docker version and <code>hello-world</code> test.</figcaption>
+</figure>
+<figure>
+  <img src="images/02-docker-login.png" alt="docker login succeeded" onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
+  <div class="missing">Add your screenshot as <code>images/02-docker-login.png</code> (“Login Succeeded”).</div>
+  <figcaption><code>docker login</code> – Login Succeeded.</figcaption>
+</figure>
+
+<!-- ============ TASK 2 ============ -->
+<h2>2. Task 2 – Image</h2>
+
+<h3>2.1 Create the image for the TP3 dataset</h3>
+<pre>docker build -t zizoutoumou/tp04-analysis:v1 .</pre>
+<p>Each Dockerfile instruction became one layer of the image. The build context sent to Docker was only about 3 kB, which shows that
+<code>.dockerignore</code> kept the 14 GB of CSV files out of the image.</p>
+<figure>
+  <img src="images/03-docker-build.png" alt="docker build output" onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
+  <div class="missing">Add your screenshot as <code>images/03-docker-build.png</code> (end of the <code>docker build</code> output).</div>
+  <figcaption>Building the image.</figcaption>
+</figure>
+
+<h3>2.2 Test on a 100,000-row sample</h3>
+<pre>docker run --rm -v "${PWD}/data:/app/data:ro" zizoutoumou/tp04-analysis:v1</pre>
+<p><code>sample.csv</code> contains the first 100,000 rows of November and is used as the default file for quick checks. The cleaning removed
+105 rows (99,895 clean rows).</p>
+<figure><img src="screenshots/04-docker-run-sample,1.png" alt="Sample run, first part"><figcaption>Run on the sample (1/2).</figcaption></figure>
+<figure><img src="screenshots/04-docker-run-sample.png" alt="Sample run, end"><figcaption>Run on the sample (2/2).</figcaption></figure>
+
+<h3>2.3 Run on the whole November file</h3>
+<pre>docker run --rm -e DATA_FILE=2019-Nov.csv -v "${PWD}/data:/app/data:ro" zizoutoumou/tp04-analysis:v1</pre>
+<p>67.5 million rows were processed in 68 chunks in 333 seconds. Container memory stayed under 1 GB (measured with <code>docker stats</code>,
+775 MiB at one point).</p>
+<figure><img src="screenshots/05-docker-run-full-progress.png" alt="November run progress"><figcaption>November – progress, one line per million rows.</figcaption></figure>
+<figure><img src="screenshots/06-docker-run-full-result,1.png" alt="November results, KPIs"><figcaption>November – KPIs, events by type, top brands and categories.</figcaption></figure>
+<figure><img src="screenshots/06-docker-run-full-result,2.png" alt="November results, hourly purchases"><figcaption>November – end of the categories and purchases per hour (<code>Done in 333s</code>).</figcaption></figure>
+
+<h3>2.4 Run on the whole October file</h3>
+<pre>docker run --rm -e CHUNK_SIZE=2000000 -e DATA_FILE=2019-Oct.csv -v "${PWD}/data:/app/data:ro" zizoutoumou/tp04-analysis:v1</pre>
+<p>Same image, different <code>DATA_FILE</code>, no rebuild. 42.4 million rows were processed in 196 seconds.</p>
+<figure><img src="screenshots/08-docker-run-oct-result,1.png" alt="October run, progress and KPIs"><figcaption>October – progress and KPIs.</figcaption></figure>
+<figure><img src="screenshots/08-docker-run-oct-result,2.png" alt="October run, brands and categories"><figcaption>October – top brands and categories.</figcaption></figure>
+<figure><img src="screenshots/08-docker-run-oct-result,3.png" alt="October run, hourly purchases"><figcaption>October – purchases per hour (<code>Done in 196s</code>).</figcaption></figure>
+
+<h3>2.5 Results summary (full dataset)</h3>
+<div class="scroll">
+<table>
+  <tr><th>Metric</th><th>TP03 (3M rows)</th><th>October 2019</th><th>November 2019</th></tr>
+  <tr><td>Rows read</td><td>3,000,000</td><td>42,448,764</td><td>67,501,979</td></tr>
+  <tr><td>Clean rows</td><td>~3,000,000</td><td>42,344,783</td><td>67,204,177</td></tr>
+  <tr><td>Unique users</td><td>416K</td><td>3,021,435</td><td>3,695,107</td></tr>
+  <tr><td>Purchases</td><td>~44K</td><td>742,773</td><td>916,930</td></tr>
+  <tr><td>Revenue</td><td>$13.34M</td><td>$229.93M</td><td>$275.19M</td></tr>
+  <tr><td>Conversion rate (purchases / events)</td><td>~1.5%</td><td>1.75%</td><td>1.36%</td></tr>
+  <tr><td>Top brand</td><td>Apple (~$6.4M)</td><td>Apple (~$111.2M)</td><td>Apple (~$127.5M)</td></tr>
+  <tr><td>Second brand</td><td>Samsung (~$2.7M)</td><td>Samsung (~$46.4M)</td><td>Samsung (~$54.9M)</td></tr>
+  <tr><td>Top main category</td><td>electronics</td><td>electronics (~$176.4M)</td><td>electronics (~$205.2M)</td></tr>
+  <tr><td>Processing time in Docker</td><td>–</td><td>196 s</td><td>333 s (329 s with Compose)</td></tr>
+</table>
+</div>
+<p>The conclusions of TP03 hold on the full data: Apple and Samsung dominate revenue, electronics is by far the strongest category, and almost all events are
+views. The “unknown” group (rows without brand or category) ranks second by category and fourth by brand, so missing data matters. The hourly profile is now
+complete over 24 hours: purchases peak around 9–10 h (UTC) in November and 8–10 h in October, and are lowest at night.</p>
+
+<h3>2.6 Push the image to Docker Hub</h3>
+<pre>docker push zizoutoumou/tp04-analysis:v1</pre>
+<p>The push uploaded the 10 layers of the image and ended with the digest <code>sha256:486ea2e76fcb…</code>. The Docker Hub page shows the same index digest,
+the platform linux/amd64 and a compressed size of 90.56 MB. The image contains no data, only the program, so the same image works for October and November.</p>
+<figure><img src="screenshots/10-dockerhub-repo,1.png" alt="Docker Hub repository page"><figcaption>Docker Hub: <code>zizoutoumou/tp04-analysis:v1</code> (index digest, size, platform).</figcaption></figure>
+<figure><img src="screenshots/10-dockerhub-repo,2.png" alt="Docker Hub image layers"><figcaption>Image layers on Docker Hub: the first 11 come from <code>python:3.11-slim</code>, then <code>COPY requirements.txt</code>, <code>RUN pip install</code>, <code>COPY app.py</code> and <code>CMD</code> come from my Dockerfile.</figcaption></figure>
+
+<h3>2.7 Pull the image from Docker Hub</h3>
+<pre>docker rmi zizoutoumou/tp04-analysis:v1
+docker images
+docker pull zizoutoumou/tp04-analysis:v1
+docker images</pre>
+<p>The local image was deleted first (the first <code>docker images</code> no longer lists it), then downloaded again from Docker Hub. The pulled digest
+<code>sha256:486ea2e7…</code> is identical to the pushed one, and the image ID <code>486ea2e76fcb</code> is the same as before the deletion.</p>
+<figure><img src="screenshots/11-docker-pull.png" alt="rmi, images, pull, images"><figcaption>Remove, pull and check the image.</figcaption></figure>
+
+<!-- ============ TASK 3 ============ -->
+<h2>3. Task 3 – Containers</h2>
+<p>Three containers were created from the pulled image and connected to a user-defined network.</p>
+<pre>docker network create bigdata-net
+docker network ls
+
+docker run -d --name analysis1 --network bigdata-net -p 8081:80 -v "${PWD}/data:/app/data:ro" zizoutoumou/tp04-analysis:v1 sleep infinity
+docker run -d --name analysis2 --network bigdata-net -p 8082:80 -v "${PWD}/data:/app/data:ro" zizoutoumou/tp04-analysis:v1 sleep infinity
+docker run -d --name analysis3 --network bigdata-net -p 8083:80 -v "${PWD}/data:/app/data:ro" zizoutoumou/tp04-analysis:v1 sleep infinity
+
+docker ps
+docker network inspect bigdata-net</pre>
+
+<ul>
+  <li><code>docker network create bigdata-net</code> creates a private bridge network. Containers attached to it can reach each other by name.</li>
+  <li><code>-d</code> runs the container in the background, <code>--name</code> fixes its name, <code>--network</code> attaches it to <code>bigdata-net</code>.</li>
+  <li><code>-p 8081:80</code> maps port 8081 of the host to port 80 of the container (8082 and 8083 for the other two). The application is a batch job and does not listen on
+  a port, so the mapping only demonstrates the syntax requested by the TP.</li>
+  <li><code>-v ...:ro</code> mounts the data folder read-only.</li>
+  <li><code>sleep infinity</code> replaces the default <code>CMD</code>. The analysis script exits when it finishes, and an exited container is not “running”; this command keeps the three containers alive so they can be verified, and the analysis is then started inside them with <code>docker exec</code>.</li>
+</ul>
+
+<h3>3.1 Network, containers and verification</h3>
+<figure><img src="screenshots/14-docker-ps.png" alt="network create, ls, three docker run and docker ps"><figcaption><code>docker ps</code>: the three containers have status <code>Up</code> and the ports 8081→80, 8082→80 and 8083→80.</figcaption></figure>
+<figure><img src="screenshots/15-network-inspect.png" alt="docker network inspect, Containers section"><figcaption><code>docker network inspect bigdata-net</code>: the three containers are attached to the network (172.18.0.2, 172.18.0.3, 172.18.0.4).</figcaption></figure>
+
+<h3>3.2 Communication between containers and running the analysis</h3>
+<pre>docker exec analysis1 python -c "import socket; print(socket.gethostbyname('analysis2'))"
+docker exec analysis1 python app.py</pre>
+<p><code>analysis1</code> resolved the name <code>analysis2</code> to <code>172.18.0.3</code>, which is exactly the IP shown by <code>network inspect</code>: the containers can talk to each other by name
+through Docker's internal DNS. The second command ran the analysis inside the running container (sample file).</p>
+<figure><img src="screenshots/16-exec-and-app,1.png" alt="docker exec, name resolution and app"><figcaption>Name resolution and analysis run inside <code>analysis1</code> (1/2).</figcaption></figure>
+<figure><img src="screenshots/16-exec-and-app,2.png" alt="docker exec, end of output"><figcaption>Analysis run inside <code>analysis1</code> (2/2).</figcaption></figure>
+
+<!-- ============ TASK 4 ============ -->
+<h2>4. Task 4 – Run the application with Docker Compose</h2>
+<p><code>compose.yaml</code> (the file of the TP, with two additions: the image name and the <code>DATA_FILE</code> variable so Compose processes the full November file):</p>
+<pre>services:
+  data-analysis:
+    build: .
+    image: zizoutoumou/tp04-analysis:v1
+    container_name: tp04-analysis
+    environment:
+      - DATA_FILE=2019-Nov.csv
+    volumes:
+      - ./data:/app/data:ro
+    restart: "no"</pre>
+<pre>docker compose up --build
+docker compose ps -a
+docker compose down</pre>
+
+<ul>
+  <li><code>docker compose up --build</code> builds the image (all layers were cached), creates the network <code>tp4_default</code> and the container <code>tp04-analysis</code>, runs the analysis and exits with code 0.</li>
+  <li><code>docker compose ps -a</code> lists the container of the project. The option <code>-a</code> is needed to also see a container that has already stopped.</li>
+  <li><code>docker compose down</code> removes the container and the network created by Compose.</li>
+</ul>
+
+<figure><img src="screenshots/17-compose-up,2.png" alt="compose up, end of output (1/2)"><figcaption><code>docker compose up --build</code> on the full November file – KPIs and tables (329 s).</figcaption></figure>
+<figure><img src="screenshots/17-compose-up,3.png" alt="compose up, end of output (2/2)"><figcaption><code>docker compose up --build</code> – hourly purchases and <code>exited with code 0</code>.</figcaption></figure>
+<figure><img src="screenshots/18a-compose-ps-running.png" alt="compose ps while running"><figcaption><code>docker compose ps -a</code> while the analysis is running: status <code>Up</code>, and the progress shown with <code>docker compose logs -f</code>.</figcaption></figure>
+<figure><img src="screenshots/18b-compose-ps-exited.png" alt="compose ps after exit"><figcaption><code>docker compose ps -a</code> after the job: status <code>Exited (0)</code>, i.e. finished successfully.</figcaption></figure>
+<figure><img src="screenshots/19-compose-down.png" alt="compose down"><figcaption><code>docker compose down</code>: the container and the network are removed.</figcaption></figure>
+
+<h3>Questions</h3>
+
+<p class="q">What problem does Docker Compose solve?</p>
+<div class="answer">
+<p>A real environment is often made of several containers (an application, a database, a message broker…), each needing a long <code>docker run</code> command with its image, network, ports, volumes and environment variables.
+Typing, remembering and sharing these commands is error-prone. Docker Compose describes the whole environment declaratively in one YAML file and starts, stops and removes it with a single command. The file is versioned with the code,
+so the environment is reproducible on any machine. Compose also creates a shared network automatically, so the services reach each other by service name.</p>
+</div>
+
+<p class="q">Compare <code>docker run</code> with <code>docker compose up</code>.</p>
+<div class="answer">
+<div class="scroll">
+<table>
+  <tr><th></th><th><code>docker run</code></th><th><code>docker compose up</code></th></tr>
+  <tr><td>Scope</td><td>One container</td><td>All the services of a project</td></tr>
+  <tr><td>Configuration</td><td>Command-line options, typed each time</td><td>Written once in <code>compose.yaml</code></td></tr>
+  <tr><td>Image</td><td>Must exist already (built or pulled before)</td><td>Can build it with <code>build:</code> / <code>--build</code></td></tr>
+  <tr><td>Network</td><td>Created manually (<code>docker network create</code>)</td><td>Created automatically (<code>tp4_default</code>)</td></tr>
+  <tr><td>Reproducibility</td><td>Depends on the command that was typed</td><td>Same file gives the same environment</td></tr>
+  <tr><td>Cleanup</td><td><code>docker stop</code> / <code>docker rm</code> for each container</td><td><code>docker compose down</code> removes everything</td></tr>
+</table>
+</div>
+<p>In this TP, Task 3 needed three long <code>docker run</code> commands plus a manual network, while Task 4 needed one file and three short commands. Compose uses the same engine and the same images; it is a more convenient way to drive them.</p>
+</div>
+
+<p class="q">How could you extend the Compose project to include a database service?</p>
+<div class="answer">
+<p>Add a second service (for example PostgreSQL) to <code>compose.yaml</code>, give it a named volume so the data survives <code>docker compose down</code>, and make the analysis service wait for it. Both services share the default network, so the application connects using the service name <code>db</code> as hostname:</p>
+<pre>services:
+  db:
+    image: postgres:16
+    container_name: tp04-db
+    environment:
+      POSTGRES_USER: bigdata
+      POSTGRES_PASSWORD: bigdata
+      POSTGRES_DB: ecommerce
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bigdata -d ecommerce"]
+      interval: 5s
+      retries: 10
+
+  data-analysis:
+    build: .
+    container_name: tp04-analysis
+    environment:
+      - DATA_FILE=2019-Nov.csv
+      - DB_HOST=db
+      - DB_NAME=ecommerce
+      - DB_USER=bigdata
+      - DB_PASSWORD=bigdata
+    volumes:
+      - ./data:/app/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  pgdata:</pre>
+<p>The Python script would then write its results (KPIs, revenue per brand, purchases per hour) into tables with a driver such as <code>psycopg2</code> or SQLAlchemy (added to <code>requirements.txt</code>), instead of only printing them.
+In a real project the password would be kept in an <code>.env</code> file rather than in the YAML. The same pattern works for MongoDB, MySQL or any other database image.</p>
+</div>
+
+<!-- ============ TASK 5 ============ -->
+<h2>5. Task 5 – Report summary</h2>
+
+<p class="q">What is Docker, and why is it useful in data-science projects?</p>
+<div class="answer">
+<p>Docker is a platform that packages an application together with everything it needs to run (operating-system libraries, language runtime, dependencies, configuration) into a standard unit called a container.
+Containers share the kernel of the host, so they are much lighter and faster to start than virtual machines.</p>
+<p>It is useful in data-science and big-data projects because:</p>
+<ul>
+  <li><strong>Reproducibility:</strong> the environment is fixed by the Dockerfile (Python 3.11, pandas 2.2.3), so the analysis gives the same results on any machine. In this TP, two runs of November gave identical numbers.</li>
+  <li><strong>Portability:</strong> the image was pushed to Docker Hub and pulled again; anyone can run it with one command, without installing Python or pandas.</li>
+  <li><strong>Isolation:</strong> dependencies of different projects do not conflict.</li>
+  <li><strong>Separation of code and data:</strong> the 14 GB of CSV files stay outside the image and are mounted read-only, and the same image processed both October and November.</li>
+  <li><strong>Scalability and orchestration:</strong> several containers can run in parallel (three containers on one network in Task 3) and be described as a whole with Compose, which prepares the ground for tools such as Spark clusters, databases and Kubernetes.</li>
+</ul>
+</div>
+
+<p class="q">Explain the difference between a Docker image and a container.</p>
+<div class="answer">
+<p>A <strong>image</strong> is a read-only template made of stacked layers: it contains the files, libraries and the default command, but it does not run. It is built from a Dockerfile and can be stored in a registry such as Docker Hub (<code>zizoutoumou/tp04-analysis:v1</code>, 417 MB on disk, 90 MB compressed).</p>
+<p>A <strong>container</strong> is a running (or stopped) instance of an image: Docker adds a thin writable layer on top of the image, gives it a process, a network and volumes, and starts it. Many containers can be created from one image; in Task 3, <code>analysis1</code>, <code>analysis2</code> and <code>analysis3</code> all come from the same image.
+Deleting a container does not delete the image. An analogy: the image is the class (or the recipe), the container is the object (or the dish).</p>
+</div>
+
+<p class="q">Explain the purpose of <code>FROM</code>, <code>WORKDIR</code>, <code>COPY</code>, <code>RUN</code> and <code>CMD</code> in the Dockerfile.</p>
+<div class="answer">
+<div class="scroll">
+<table>
+  <tr><th>Instruction</th><th>Purpose</th><th>In this TP</th></tr>
+  <tr><td><code>FROM</code></td><td>Sets the base image on which the new image is built; it is always the first instruction.</td><td><code>FROM python:3.11-slim</code>: a small Debian image with Python 3.11 already installed.</td></tr>
+  <tr><td><code>WORKDIR</code></td><td>Sets the working directory inside the image (creates it if needed) for the following instructions and for the running container.</td><td><code>WORKDIR /app</code></td></tr>
+  <tr><td><code>COPY</code></td><td>Copies files from the build context (my machine) into the image.</td><td><code>COPY requirements.txt .</code> then <code>COPY app.py .</code></td></tr>
+  <tr><td><code>RUN</code></td><td>Executes a command <strong>at build time</strong> and saves the result as a new layer (installing packages, for example).</td><td><code>RUN pip install --no-cache-dir -r requirements.txt</code></td></tr>
+  <tr><td><code>CMD</code></td><td>Defines the default command executed <strong>when a container starts</strong>. It is not run during the build and can be overridden at <code>docker run</code>.</td><td><code>CMD ["python", "app.py"]</code>; overridden with <code>sleep infinity</code> in Task 3.</td></tr>
+</table>
+</div>
+<p><code>requirements.txt</code> is copied and installed before <code>app.py</code> on purpose: Docker caches each layer, so when only <code>app.py</code> changes, the slow <code>pip install</code> layer is reused. This is why the rebuild done by Compose took under 2 seconds.</p>
+</div>
+
+<h2>6. Limitations and notes</h2>
+<ul>
+  <li>Duplicate rows are removed inside each chunk (1 or 2 million rows), not across the whole file, because a global <code>drop_duplicates</code> would need all rows in memory. The effect on the totals is expected to be very small.</li>
+  <li>Large numbers appear in scientific notation in the console (for example <code>1.275125e+08</code> = 127,512,500); this is only a display format.</li>
+  <li>The hourly breakdown uses the UTC timestamps of the dataset.</li>
+  <li>Compose retagged <code>zizoutoumou/tp04-analysis:v1</code> locally with a fresh build (same layers, new manifest). The image on Docker Hub was not modified.</li>
+  <li>The raw CSV files are not in the repository because of their size (14 GB). They can be downloaded from Kaggle: <em>eCommerce behavior data from multi-category store</em> (mkechinov) and placed in <code>data/</code>.</li>
+</ul>
+
+<h2>7. How to reproduce</h2>
+<pre>git clone &lt;this repository&gt;
+cd &lt;repository&gt;
+# put 2019-Oct.csv and 2019-Nov.csv (from Kaggle) in ./data
+
+docker pull zizoutoumou/tp04-analysis:v1
+docker run --rm -e DATA_FILE=2019-Nov.csv -v "${PWD}/data:/app/data:ro" zizoutoumou/tp04-analysis:v1
+
+# or with Compose
+docker compose up --build
+docker compose down</pre>
+
+<h2>8. Files in this repository</h2>
+<ul>
+  <li><code>app.py</code>, <code>requirements.txt</code>, <code>Dockerfile</code>, <code>.dockerignore</code>, <code>.gitignore</code>, <code>compose.yaml</code></li>
+  <li><code>images/</code> – screenshots used in this report</li>
+  <li><code>TP04_report.html</code> – this report</li>
+  <li><code>README.md</code></li>
+</ul>
+
+</main>
+</body>
+</html>
