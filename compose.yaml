@@ -1,0 +1,10 @@
+services:
+  data-analysis:
+    build: .
+    image: zizoutoumou/tp04-analysis:v1
+    container_name: tp04-analysis
+    environment:
+      - DATA_FILE=2019-Nov.csv
+    volumes:
+      - ./data:/app/data:ro
+    restart: "no"
